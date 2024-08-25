@@ -1,0 +1,12 @@
+chainlit
+transformers
+fastembed
+sentence_transformers
+langchain
+langchain_community
+langchain-huggingface
+PyPDF2
+chromadb
+groq
+langchain-groq
+ollama
