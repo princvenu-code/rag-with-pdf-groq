@@ -10,3 +10,4 @@ chromadb
 groq
 langchain-groq
 ollama
+wikipedia
