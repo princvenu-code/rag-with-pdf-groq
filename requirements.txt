@@ -6,6 +6,7 @@ langchain
 langchain_community
 langchain-huggingface
 PyPDF2
+pypdf
 chromadb
 groq
 langchain-groq

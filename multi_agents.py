@@ -1,4 +1,5 @@
 from langchain import hub
+from rag_pipeline import RAGPipeline
 from langchain.agents import (AgentExecutor, create_vectorstore_agent, create_react_agent, create_structured_chat_agent)
 from langchain_core.tools import Tool
 from langchain_groq import ChatGroq
@@ -30,6 +31,15 @@ def search_wikipedia(query):
     except:
         "I couldn't find the information on that"
 
+def search_docstore(query):
+    rag_pipeline = RAGPipeline(False)
+    chain = rag_pipeline.get_conversation_chain()
+    try:
+        return rag_pipeline.get_response_from_chain(chain=chain, query=query)
+    except:
+        "I couldn't find the information on that"
+
+
 
 tools = [Tool(name="Time",
               func=get_current_time,
@@ -42,6 +52,10 @@ tools = [Tool(name="Time",
         Tool(name="wikipedia",
              func=search_wikipedia,
              description="Useful for when you need to know information about the topic"
+             ),
+        Tool(name="docstore",
+             func=search_docstore,
+             description="Useful for when you need to answer question about the context from the document"
              ),
              ]
 
@@ -65,7 +79,10 @@ agent_executor = AgentExecutor.from_agent_and_tools(
     memory=memory,
     handle_parsing_errors=True)
 
-initial_message = "You are an AI assistant that can provide helpful answers using available tools. \nIf you arr unable to anwser the query, please search the wikipedia for the information"
+initial_message = '''
+You are an AI assistant that can provide helpful answers using available tools. \nIf you get any context from the documents, then answer only that. If you are not able to get any 
+context from documents, please search the wikipedia for the information
+''' 
 memory.chat_memory.add_message(AIMessage(content=initial_message))
 while True:
     user_input = input("User: ")

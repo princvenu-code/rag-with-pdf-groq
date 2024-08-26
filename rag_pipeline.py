@@ -1,45 +1,93 @@
-from constants import DOCUMENT_MAP
-from langchain_community.document_loaders import PyPDFLoader 
-from langchain.docstore.document import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from chromadb.config import Settings
-import os
+from rag_component import *
+import constants as CONSTS
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
+from langchain import hub
+from langchain.chains import retrieval_qa, ConversationalRetrievalChain
+from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 import logging
 
 
-SOURCE_DIRECTORY = "\SOURCE_DOCUMENTS"
-def load_documents(source_dir: str) -> list[Document]:
-    # Loads all documents from the source documents directory, including nested folders
-    paths = []
-    for root, _, files in os.walk(source_dir):
-        for file_name in files:
-            print('Importing: ' + file_name)
-            file_extension = os.path.splitext(file_name)[1]
-            source_file_path = os.path.join(root, file_name)
-            if file_extension in DOCUMENT_MAP.keys():
-                paths.append(source_file_path)
+class RAGPipeline:
+    def __init__(self, ingest_data: bool):
+            self.ingest_data = ingest_data
+            load_dotenv()
+            logging.basicConfig(
+                    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", 
+                    level=logging.INFO)
+            
+            groq_api_key = os.environ["GROQ_API_KEY"]
+
+            self.llm = ChatGroq(
+                        groq_api_key=groq_api_key,
+                        model_name='mixtral-8x7b-32768'
+                )
+
+            # embeddings = HuggingFaceEmbeddings(
+            #         model_name="thenlper/gte-small",
+            #         multi_process=False,
+            #         model_kwargs={"device": "cpu"},
+            #         encode_kwargs={"normalize_embeddings": True},  # Set `True` for cosine similarity
+            #     )
+            self.embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-base-en-v1.5")
+            if self.ingest_data:
+                add_documents_to_vector_store(CONSTS.SOURCE_DIRECTORY, self.embeddings)
+
+            self.retriever = get_vector_store_retriever(embeddings=self.embeddings)
+
+    def get_conversation_chain(self):
+        message_history = ChatMessageHistory()    
+           
+        memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            output_key="answer",
+            chat_memory=message_history,
+            return_messages=True,
+        )
+
+
+        chain = ConversationalRetrievalChain.from_llm(
+            llm = self.llm,
+            chain_type="stuff",
+            retriever=self.retriever,
+            memory=memory,
+            return_source_documents=True,
+        )
+        return chain
+
+
+    def get_raw_rag_response(self, query):
+         
+        response = self.retriever.invoke(query)
+        print("----Response----")
+
+        for i, doc in enumerate(response, 1):
+            print(f"Document {i}: \n{doc.page_content}\n")
+
+    
+    def get_response_from_chain(self, chain, query):
+        res = chain.invoke({"question": query})
+        answer = res["answer"]
+        source_documents = res["source_documents"] 
+        return answer
     
 
-    logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
-    documents = load_documents(SOURCE_DIRECTORY)
-    text_documents = split_documents(documents)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    texts = text_splitter.split_documents(text_documents)
-    logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
-    logging.info(f"Split into {len(texts)} chunks of text")
+    def main(self):
+        chain = self.get_conversation_chain()
+        query = "What are different types of windowing?"
+        response = self.get_response_from_chain(chain, query)
+        # response = self.get_raw_rag_response(query)
+        print(response)
 
-
-def split_documents(documents: list[Document]) -> tuple[list[Document], list[Document]]:
-    # Splits documents for correct Text Splitter
-    text_docs = []
-    for doc in documents:
-        if doc is not None:
-           text_docs.append(doc)
-    return text_docs
-
-
-pdf = PyPDFLoader(file.path)
-    pdf_text = ""
-    for page in pdf.pages:
-        pdf_text += page.extract_text()
+if __name__ == '__main__':
+    try:
+        rag_pipeline = RAGPipeline(False)        
+        rag_pipeline.main()
+        logging.info(f">>>>>> RAG Pipleline Started <<<<<<\n\nx==========x")
+    except Exception as e:
+        logging.info(f"Exception ", str(e))
+        raise e
